@@ -1,6 +1,6 @@
 Case 1
 
-*rateLimiterBucket*
+TokenBucketRateLimiter
 ![img.png](img/rateLimiterBucket.png)
 
 SlidingWindowRateLimiter

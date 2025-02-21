@@ -6,12 +6,15 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import org.slf4j.LoggerFactory
-import ru.quipy.common.utils.SlidingWindowRateLimiter
+import ru.quipy.common.utils.LeakingBucketRateLimiter
 import ru.quipy.core.EventSourcingService
 import ru.quipy.payments.api.PaymentAggregate
 import java.net.SocketTimeoutException
 import java.time.Duration
 import java.util.*
+import ru.quipy.common.utils.SlidingWindowRateLimiter
+import ru.quipy.common.utils.TokenBucketRateLimiter
+import java.util.concurrent.TimeUnit
 
 
 // Advice: always treat time as a Duration
@@ -32,9 +35,17 @@ class PaymentExternalSystemAdapterImpl(
     private val requestAverageProcessingTime = properties.averageProcessingTime
     private val rateLimitPerSec = properties.rateLimitPerSec
     private val parallelRequests = properties.parallelRequests
-
-    private val rateLimiter = SlidingWindowRateLimiter(rate = rateLimitPerSec.toLong()-1, window = Duration.ofSeconds(1))
     private val client = OkHttpClient.Builder().build()
+
+
+    private val rateLimiterSlidingWindow = SlidingWindowRateLimiter(rate = rateLimitPerSec.toLong(), window = Duration.ofSeconds(1))
+    private val rateLimiterLeakingBucket = LeakingBucketRateLimiter(rateLimitPerSec.toLong(),window = Duration.ofSeconds(1), bucketSize = 11 )
+    private val rateLimiterBucket = TokenBucketRateLimiter(
+        rateLimitPerSec,
+        window = 1000,
+        bucketMaxCapacity = 11,
+        timeUnit = TimeUnit.MILLISECONDS
+    )
 
     override fun performPaymentAsync(paymentId: UUID, amount: Int, paymentStartedAt: Long, deadline: Long) {
         logger.warn("[$accountName] Submitting payment request for payment $paymentId")
@@ -48,19 +59,28 @@ class PaymentExternalSystemAdapterImpl(
             it.logSubmission(success = true, transactionId, now(), Duration.ofMillis(now() - paymentStartedAt))
         }
 
+        while (!rateLimiterBucket.tick()) {
+            Thread.sleep(5)
+        }
+
         val request = Request.Builder().run {
             url("http://localhost:1234/external/process?serviceName=${serviceName}&accountName=${accountName}&transactionId=$transactionId&paymentId=$paymentId&amount=$amount")
             post(emptyBody)
         }.build()
 
         try {
-            rateLimiter.tickBlocking()
+//            while (!rateLimiterBucket.tick()) {
+//                Thread.sleep(5)
+//            }
+//                 rateLimiterSlidingWindow.tickBlocking()
             client.newCall(request).execute().use { response ->
                 val body = try {
                     mapper.readValue(response.body?.string(), ExternalSysResponse::class.java)
                 } catch (e: Exception) {
                     logger.error("[$accountName] [ERROR] Payment processed for txId: $transactionId, payment: $paymentId, result code: ${response.code}, reason: ${response.body?.string()}")
+
                     ExternalSysResponse(transactionId.toString(), paymentId.toString(),false, e.message)
+
                 }
 
                 logger.warn("[$accountName] Payment processed for txId: $transactionId, payment: $paymentId, succeeded: ${body.result}, message: ${body.message}")

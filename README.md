@@ -1,8 +1,5 @@
-Case 1
+Case 2
 
-TokenBucketRateLimiter
-![img.png](img/rateLimiterBucket.png)
-
-SlidingWindowRateLimiter
-![img.png](img/SlidingWindowRateLimiter.png)
-
+Semaphore and TokenBucket method 
+![Semaphore+TokenBucket.png](img/Semaphore+TokenBucket.png)
+(test bug x2)

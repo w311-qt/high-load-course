@@ -15,6 +15,7 @@ import java.util.*
 import ru.quipy.common.utils.SlidingWindowRateLimiter
 import ru.quipy.common.utils.TokenBucketRateLimiter
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.Semaphore
 
 
 // Advice: always treat time as a Duration
@@ -38,14 +39,17 @@ class PaymentExternalSystemAdapterImpl(
     private val client = OkHttpClient.Builder().build()
 
 
+
     private val rateLimiterSlidingWindow = SlidingWindowRateLimiter(rate = rateLimitPerSec.toLong(), window = Duration.ofSeconds(1))
-    private val rateLimiterLeakingBucket = LeakingBucketRateLimiter(rateLimitPerSec.toLong(),window = Duration.ofSeconds(1), bucketSize = 11 )
+    private val rateLimiterLeakingBucket = LeakingBucketRateLimiter(rate = rateLimitPerSec.toLong(),window = Duration.ofSeconds(1), bucketSize = 11 )
     private val rateLimiterBucket = TokenBucketRateLimiter(
         rateLimitPerSec,
         window = 1000,
-        bucketMaxCapacity = 11,
+        bucketMaxCapacity = rateLimitPerSec, // +-1 можно тест
         timeUnit = TimeUnit.MILLISECONDS
     )
+
+    private val semaphore = Semaphore(parallelRequests)
 
     override fun performPaymentAsync(paymentId: UUID, amount: Int, paymentStartedAt: Long, deadline: Long) {
         logger.warn("[$accountName] Submitting payment request for payment $paymentId")
@@ -59,8 +63,9 @@ class PaymentExternalSystemAdapterImpl(
             it.logSubmission(success = true, transactionId, now(), Duration.ofMillis(now() - paymentStartedAt))
         }
 
+        semaphore.acquire() // блокируем потом до захвата симафора
         while (!rateLimiterBucket.tick()) {
-            Thread.sleep(5)
+            Thread.sleep(10)
         }
 
         val request = Request.Builder().run {
@@ -69,7 +74,7 @@ class PaymentExternalSystemAdapterImpl(
         }.build()
 
         try {
-//            while (!rateLimiterBucket.tick()) {
+//            while (!rateLimiterLeakingBucket.tick()) {
 //                Thread.sleep(5)
 //            }
 //                 rateLimiterSlidingWindow.tickBlocking()
@@ -109,6 +114,7 @@ class PaymentExternalSystemAdapterImpl(
                 }
             }
         }
+        semaphore.release() // освобождаем захваченный ресурс, без него будет утечка ресурса
     }
 
     override fun price() = properties.price

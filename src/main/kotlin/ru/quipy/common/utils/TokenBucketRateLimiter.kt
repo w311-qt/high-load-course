@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.ReentrantLock
 
 class TokenBucketRateLimiter(
     private val rate: Int,
@@ -19,6 +20,8 @@ class TokenBucketRateLimiter(
     companion object {
         private val logger: Logger = LoggerFactory.getLogger(TokenBucketRateLimiter::class.java)
     }
+
+    private val mutex = ReentrantLock()
 
     private val rateLimiterScope = CoroutineScope(Executors.newSingleThreadExecutor().asCoroutineDispatcher())
 

@@ -16,7 +16,6 @@ import ru.quipy.common.utils.SlidingWindowRateLimiter
 import ru.quipy.common.utils.TokenBucketRateLimiter
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.Semaphore
-import liquibase.pro.packaged.it
 import java.util.concurrent.atomic.AtomicInteger
 
 
@@ -39,7 +38,7 @@ class PaymentExternalSystemAdapterImpl(
     private val rateLimitPerSec = properties.rateLimitPerSec
     private val parallelRequests = properties.parallelRequests
     private val retryCount = 3
-    private val client = OkHttpClient.Builder().build()
+    private val client = OkHttpClient.Builder().callTimeout(1300L, TimeUnit.MILLISECONDS).build()
 
 
 
@@ -88,6 +87,8 @@ class PaymentExternalSystemAdapterImpl(
             while (!rateLimiterBucket.tick()) {
                 Thread.sleep(10)
             }
+
+            // Цикл повторных попыток
             val attempt = AtomicInteger(1)
             var isSuccess = false
             while (attempt.incrementAndGet() <= retryCount) { // Цикл повторных попыток

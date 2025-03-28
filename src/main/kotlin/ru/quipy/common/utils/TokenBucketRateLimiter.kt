@@ -10,7 +10,6 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 
 class TokenBucketRateLimiter(
     private val rate: Int,
@@ -27,15 +26,15 @@ class TokenBucketRateLimiter(
 
     private var bucket: AtomicInteger = AtomicInteger(0)
     private var start = System.currentTimeMillis()
-    private var nextExpectedWakeUp = start + timeUnit.toMillis(window)
+    private var nextExpectedWakeUp = start + timeUnit.toMillis(window.toLong())
 
     private val releaseJob = rateLimiterScope.launch {
         while (true) {
             start = System.currentTimeMillis()
-            nextExpectedWakeUp = start + timeUnit.toMillis(window)
+            nextExpectedWakeUp = start + timeUnit.toMillis(window.toLong())
 
             bucket.get().let { cur ->
-                bucket.addAndGet(if (cur + rate > bucketMaxCapacity) bucketMaxCapacity - cur else rate)
+                bucket.addAndGet((if (cur + rate > bucketMaxCapacity) bucketMaxCapacity - cur else rate) as Int)
             }
             delay(nextExpectedWakeUp - System.currentTimeMillis())
         }
